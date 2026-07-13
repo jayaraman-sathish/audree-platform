@@ -9,8 +9,8 @@ services:
     name: audree-backend
     runtime: docker
     rootDir: audreeplatform/audree/backend
-    dockerContext: audreeplatform/audree/backend
-    dockerfilePath: audreeplatform/audree/backend/Dockerfile
+    dockerContext: .
+    dockerfilePath: Dockerfile
     dockerCommand: >-
       sh -c "alembic upgrade head && python -m app.db.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     plan: free
@@ -29,8 +29,8 @@ services:
     name: audree-frontend
     runtime: docker
     rootDir: audreeplatform/audree/frontend
-    dockerContext: audreeplatform/audree/frontend
-    dockerfilePath: audreeplatform/audree/frontend/Dockerfile
+    dockerContext: .
+    dockerfilePath: Dockerfile
     dockerCommand: >-
       sh -c "npm run build && npm run preview -- --host 0.0.0.0 --port $PORT"
     plan: free
