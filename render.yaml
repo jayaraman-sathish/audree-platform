@@ -1,4 +1,4 @@
-atabases:
+databases:
   - name: audree-db
     plan: free
     databaseName: audree
