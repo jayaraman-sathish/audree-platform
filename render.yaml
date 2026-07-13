@@ -1,4 +1,4 @@
-databases:
+atabases:
   - name: audree-db
     plan: free
     databaseName: audree
@@ -11,8 +11,6 @@ services:
     rootDir: audreeplatform/audree/backend
     dockerContext: .
     dockerfilePath: Dockerfile
-    dockerCommand: >-
-      sh -c "alembic upgrade head && python -m app.db.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     plan: free
     healthCheckPath: /api/v1/health
     envVars:
@@ -22,8 +20,6 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
-      - key: PORT
-        value: 8000
 
   - type: web
     name: audree-frontend
@@ -31,11 +27,7 @@ services:
     rootDir: audreeplatform/audree/frontend
     dockerContext: .
     dockerfilePath: Dockerfile
-    dockerCommand: >-
-      sh -c "npm run build && npm run preview -- --host 0.0.0.0 --port $PORT"
     plan: free
     envVars:
       - key: VITE_API_BASE_URL
         value: https://audree-backend.onrender.com
-      - key: PORT
-        value: 5173
