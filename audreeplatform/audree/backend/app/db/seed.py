@@ -32,14 +32,22 @@ def run(wipe: bool = False):
         db.query(m.SimQC).delete()
         db.commit()
 
-        # 13 Configuration Masters
+        # 13 Configuration Masters.
+        # Parent MasterVersion rows must exist (flushed) before the child
+        # MasterRow rows that reference them via master_id, otherwise
+        # SQLAlchemy's insertmanyvalues batching can emit the MasterRow
+        # inserts before the MasterVersion inserts (there's no ORM-level
+        # relationship() tying them together, only a plain FK column), which
+        # trips the foreign key constraint. Flush per-master to force order.
         for mid in MASTER_ORDER:
             spec = MASTERS[mid]
             db.add(m.MasterVersion(master_id=mid, title=spec["title"], version="v1.0", draft_count=0))
+            db.flush()
             for row in spec["rows"]:
                 data = dict(zip(spec["cols"], row))
                 db.add(m.MasterRow(master_id=mid, code=str(row[0]), data=data, status="published",
                                     is_active=True, version_at_write="v1.0"))
+            db.flush()
         db.commit()
 
         # Business scenarios BR-001..BR-007
