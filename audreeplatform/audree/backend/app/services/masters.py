@@ -27,6 +27,81 @@ def _bump(db: Session, mv: m.MasterVersion):
     db.add(mv)
 
 
+class ReferenceValidationError(ValueError):
+    """Raised when a row references another master by a code/name that does
+    not currently exist as an active row there (routed to HTTP 400)."""
+
+
+def _is_active(data: dict) -> bool:
+    return str((data or {}).get("Status", "")).strip().lower() == "active"
+
+
+def _active_data(db: Session, master_id: str):
+    return [r.data or {} for r in published_rows(db, master_id) if _is_active(r.data or {})]
+
+
+def _capability_token(cap_code: str) -> str:
+    """CAP-MAT-001 -> MAT (the shorthand token Agent Register uses in its
+    'Supported Capabilities' free-text list)."""
+    parts = str(cap_code).split("-")
+    return parts[1] if len(parts) > 1 else str(cap_code)
+
+
+def compute_possible_agents(db: Session, cap_code: str) -> str:
+    """Capability Registry's 'Possible Agents' is DERIVED, read-only: which
+    active Agent Register rows declare support for this capability's token in
+    their 'Supported Capabilities' field. Recomputed on every read from the
+    live, published Agent Register so it can never drift out of sync (this
+    replaces a formerly independently-typed free-text field)."""
+    token = _capability_token(cap_code)
+    names = []
+    for data in _active_data(db, "agent"):
+        supported = str(data.get("Supported Capabilities", ""))
+        toks = [t.strip().split(" ")[0] for t in supported.split(",") if t.strip()]
+        if token in toks:
+            name = data.get("Agent Name")
+            if name and name not in names:
+                names.append(name)
+    return ", ".join(names)
+
+
+def present_row_data(db: Session, master_id: str, data: dict, fallback_code: str = "") -> dict:
+    """Applies any read-time computed-field overrides for a master's row
+    data. 'cap' -> Possible Agents is always recomputed from Agent Register,
+    never taken from what was stored (even if a client tried to submit one)."""
+    if master_id == "cap" and data is not None:
+        data = dict(data)
+        data["Possible Agents"] = compute_possible_agents(db, data.get("Capability Code", fallback_code))
+    return data
+
+
+def validate_row(db: Session, master_id: str, data: dict) -> None:
+    """Referential-integrity checks for one-directional reference columns:
+    reject rows that point at a code/name that isn't an active row in the
+    referenced master, instead of allowing arbitrary free text."""
+    if master_id == "iam":
+        cap_codes = {d.get("Capability Code") for d in _active_data(db, "cap") if d.get("Capability Code")}
+        cap_val = str(data.get("Capability", ""))
+        if cap_val and cap_codes and not any(code in cap_val for code in cap_codes):
+            raise ReferenceValidationError(
+                f"Capability '{cap_val}' does not reference an active Capability Registry code")
+        agent_names = {d.get("Agent Name") for d in _active_data(db, "agent") if d.get("Agent Name")}
+        for col in ("Primary Agent", "Fallback Agent"):
+            val = data.get(col)
+            if val and agent_names and val not in agent_names:
+                raise ReferenceValidationError(f"{col} '{val}' is not an active Agent Register entry")
+    elif master_id == "wf":
+        intent_codes = {d.get("Intent Code") for d in _active_data(db, "intent") if d.get("Intent Code")}
+        val = data.get("Intent")
+        if val and intent_codes and val not in intent_codes:
+            raise ReferenceValidationError(f"Intent '{val}' is not an active Intent Master code")
+    elif master_id == "role":
+        intent_codes = {d.get("Intent Code") for d in _active_data(db, "intent") if d.get("Intent Code")}
+        val = str(data.get("Intent", ""))
+        if val and intent_codes and not any(val.startswith(code) for code in intent_codes):
+            raise ReferenceValidationError(f"Intent '{val}' does not start with an active Intent Master code")
+
+
 def list_rows(db: Session, master_id: str, include_drafts: bool = True):
     q = db.query(m.MasterRow).filter(m.MasterRow.master_id == master_id, m.MasterRow.is_active == True)  # noqa: E712
     if not include_drafts:
@@ -41,6 +116,11 @@ def published_rows(db: Session, master_id: str):
 
 def create_row(db: Session, master_id: str, data: dict) -> m.MasterRow:
     mv = get_master_meta(db, master_id)
+    validate_row(db, master_id, data or {})
+    if master_id == "cap" and data is not None:
+        # Possible Agents can never be manually typed/stored -- it is always
+        # derived at read time from Agent Register.
+        data = {**data, "Possible Agents": ""}
     _bump(db, mv)
     cols = MASTERS[master_id]["cols"]
     code = str(data.get(cols[0], "")) if data else ""
@@ -57,6 +137,9 @@ def update_row(db: Session, master_id: str, row_id: int, data: dict) -> m.Master
     row = db.query(m.MasterRow).filter(m.MasterRow.id == row_id, m.MasterRow.master_id == master_id).first()
     if not row:
         raise ValueError("Row not found")
+    validate_row(db, master_id, data or {})
+    if master_id == "cap" and data is not None:
+        data = {**data, "Possible Agents": ""}
     _bump(db, mv)
     cols = MASTERS[master_id]["cols"]
     row.data = data
