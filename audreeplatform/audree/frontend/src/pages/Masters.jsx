@@ -15,10 +15,52 @@ function groupOfMaster(masterId) {
   return MASTER_GROUPS.find((g) => g.masters.includes(masterId))?.id || MASTER_GROUPS[0].id;
 }
 
-// Simple controlled multi-select rendered as a checkbox grid, for cross-reference columns that
-// are genuinely multi-valued (e.g. Agent Register's Supported Capabilities). The stored value
-// stays a comma-separated string — this only changes how it is captured/edited.
+// Every lookup option is normalized to { value, label } where `value` is whatever raw string
+// the existing stored data format expects (never changed) and `label` is always rendered as
+// "CODE — Name" (or "ID — Name") so the person picking never sees a bare abbreviation.
+const LOOKUP_SEARCH_THRESHOLD = 6;
+
+function matchesQuery(o, q) {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  return o.label.toLowerCase().includes(needle) || String(o.value).toLowerCase().includes(needle);
+}
+
+// Single-value lookup (Capability in Intent–Agent Mapping, Primary/Fallback Agent, Intent, etc.)
+// rendered as a plain <select> so it stays a fully native, keyboard-accessible control, with an
+// optional search box above it once the option list is long enough that scanning it is a chore.
+function LookupSelect({ options, value, onChange }) {
+  const [q, setQ] = useState("");
+  const showSearch = options.length > LOOKUP_SEARCH_THRESHOLD;
+  const filtered = showSearch ? options.filter((o) => matchesQuery(o, q)) : options;
+  return (
+    <div className="lookup-picker">
+      {showSearch && (
+        <input
+          type="text"
+          className="cellinput lookup-search"
+          placeholder="Search code or name…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+      )}
+      <select className="cellinput" value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">— select —</option>
+        {value && !options.some((o) => o.value === value) && <option value={value}>{value}</option>}
+        {filtered.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {showSearch && q && filtered.length === 0 && <div className="lookup-empty">No match for "{q}"</div>}
+    </div>
+  );
+}
+
+// Controlled multi-select for cross-reference columns that are genuinely multi-valued (e.g.
+// Agent Register's Supported Capabilities, Intent Master's Required Capabilities). The stored
+// value stays a comma-separated string of whatever tokens/codes the data already uses — this
+// only changes how it is captured/edited: a searchable, scrollable list with an at-a-glance
+// "N selected" summary instead of a small grid of bare checkboxes.
 function MultiCheckGrid({ options, value, onChange }) {
+  const [q, setQ] = useState("");
   const selected = String(value || "").split(",").map((s) => s.trim()).filter(Boolean);
   const toggle = (v) => {
     const set = new Set(selected);
@@ -27,20 +69,32 @@ function MultiCheckGrid({ options, value, onChange }) {
     const unknown = selected.filter((s) => s !== v && !options.some((o) => o.value === s));
     onChange([...ordered, ...unknown].join(", "));
   };
+  const selectedLabels = selected.map((s) => options.find((o) => o.value === s)?.label || s);
+  const showSearch = options.length > LOOKUP_SEARCH_THRESHOLD;
+  const filtered = showSearch ? options.filter((o) => matchesQuery(o, q)) : options;
   return (
-    <div
-      className="cellinput"
-      style={{
-        display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "4px 10px",
-        padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 6, maxHeight: 160, overflowY: "auto",
-      }}
-    >
-      {options.map((o) => (
-        <label key={o.value} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: ".78rem" }}>
-          <input type="checkbox" checked={selected.includes(o.value)} onChange={() => toggle(o.value)} />
-          {o.label}
-        </label>
-      ))}
+    <div className="lookup-picker msel">
+      <div className="lookup-summary">
+        {selected.length === 0 ? "None selected" : `${selected.length} selected: ${selectedLabels.join(", ")}`}
+      </div>
+      {showSearch && (
+        <input
+          type="text"
+          className="cellinput lookup-search"
+          placeholder="Search code or name…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+      )}
+      <div className="lookup-list">
+        {filtered.map((o) => (
+          <label key={o.value} className="lookup-row">
+            <input type="checkbox" checked={selected.includes(o.value)} onChange={() => toggle(o.value)} />
+            {o.label}
+          </label>
+        ))}
+        {showSearch && q && filtered.length === 0 && <div className="lookup-empty">No match for "{q}"</div>}
+      </div>
     </div>
   );
 }
@@ -68,23 +122,45 @@ export default function Masters() {
   const intentRef = useQuery({ queryKey: ["master", "intent"], queryFn: () => api.get("/api/v1/masters/intent").then((r) => r.data) });
 
   const activeRowsOf = (data) => (data?.rows || []).filter((r) => String(r.data?.Status ?? "Active").trim().toLowerCase() === "active");
-  const capComboOptions = () => activeRowsOf(capRef.data).map((r) => `${r.data["Capability Name"]} (${r.data["Capability Code"]})`);
-  const agentNameOptions = () => activeRowsOf(agentRef.data).map((r) => r.data["Agent Name"]);
-  const intentCodeOptions = () => activeRowsOf(intentRef.data).map((r) => r.data["Intent Code"]);
-  const roleIntentOptions = () => activeRowsOf(intentRef.data).map((r) => `${r.data["Intent Code"]} ${r.data["Intent Name"]}`);
+  // Every lookup below shows "CODE — Name" (or "ID — Name") in the label, no matter what raw
+  // format the stored `value` needs to keep matching the existing data (see fields' comments).
+  const capComboOptions = () => activeRowsOf(capRef.data).map((r) => {
+    const code = r.data["Capability Code"];
+    const name = r.data["Capability Name"];
+    // Intent–Agent Mapping's "Capability" column stores "Name (CODE)" strings — keep that format.
+    return { value: `${name} (${code})`, label: `${code} — ${name}` };
+  });
+  const agentNameOptions = () => activeRowsOf(agentRef.data).map((r) => {
+    const id = r.data["Agent ID"];
+    const name = r.data["Agent Name"];
+    // Primary/Fallback Agent columns store the plain Agent Name — keep that format.
+    return { value: name, label: `${id} — ${name}` };
+  });
+  const intentCodeOptions = () => activeRowsOf(intentRef.data).map((r) => {
+    const code = r.data["Intent Code"];
+    const name = r.data["Intent Name"];
+    // Workflow Mapping's "Intent" column stores the plain Intent Code — keep that format.
+    return { value: code, label: `${code} — ${name}` };
+  });
+  const roleIntentOptions = () => activeRowsOf(intentRef.data).map((r) => {
+    const code = r.data["Intent Code"];
+    const name = r.data["Intent Name"];
+    // Role Permission's "Intent" column stores "CODE Name" — keep that format.
+    return { value: `${code} ${name}`, label: `${code} — ${name}` };
+  });
   const capToken = (code) => { const p = String(code).split("-"); return p.length > 1 ? p[1] : String(code); };
   // Agent Register's "Supported Capabilities" is stored as comma-separated capability TOKENS
   // (e.g. "PROD, MAT") — the middle segment of the Capability Registry code (CAP-PROD-001 -> PROD).
   const capTokenOptions = () => activeRowsOf(capRef.data).map((r) => {
     const code = r.data["Capability Code"];
     const token = capToken(code);
-    return { value: token, label: `${r.data["Capability Name"]} (${token})` };
+    return { value: token, label: `${code} — ${r.data["Capability Name"]}` };
   });
   // Intent Master's "Required Capabilities" is stored as comma-separated full Capability Registry
   // codes (e.g. "CAP-PROD-001, CAP-MAT-001").
   const capCodeOptions = () => activeRowsOf(capRef.data).map((r) => {
     const code = r.data["Capability Code"];
-    return { value: code, label: `${r.data["Capability Name"]} (${code})` };
+    return { value: code, label: `${code} — ${r.data["Capability Name"]}` };
   });
   const computePossibleAgents = (capCode) => {
     const token = capToken(capCode);
@@ -109,15 +185,32 @@ export default function Masters() {
 
   // onSet receives the new raw value directly (not an event) so it works uniformly for
   // text/select inputs (onSet(e.target.value)) and the multi-select checkbox grid (onSet(string)).
+  // Every field is wrapped in a labeled block: a small mono caption above the control keeps the
+  // wide edit row scannable, and computed fields get a visibly distinct "read-only" treatment so
+  // they are never mistaken for something the user forgot to fill in.
   function renderField(col, value, onSet, rowValues) {
     const kind = fieldKind(active, col);
     if (kind === "computed") {
-      const capCode = rowValues ? rowValues["Capability Code"] : value;
-      return <input className="cellinput" value={computePossibleAgents(capCode)} disabled title="Derived from Agent Register — cannot be edited directly" />;
+      return (
+        <div className="field-block field-readonly">
+          <span className="field-label">{col} <span className="pill sys" style={{ marginLeft: 6 }}>COMPUTED</span></span>
+          <input
+            className="cellinput"
+            value={computePossibleAgents(rowValues ? rowValues["Capability Code"] : value)}
+            disabled
+            title="Derived from Agent Register — cannot be edited directly"
+          />
+        </div>
+      );
     }
     if (kind === "cap-multi-token" || kind === "cap-multi-code") {
       const options = kind === "cap-multi-token" ? capTokenOptions() : capCodeOptions();
-      return <MultiCheckGrid options={options} value={value} onChange={onSet} />;
+      return (
+        <div className="field-block">
+          <span className="field-label">{col}</span>
+          <MultiCheckGrid options={options} value={value} onChange={onSet} />
+        </div>
+      );
     }
     let options = null;
     if (kind === "cap-combo") options = capComboOptions();
@@ -125,15 +218,19 @@ export default function Masters() {
     else if (kind === "intent-code") options = intentCodeOptions();
     else if (kind === "role-intent") options = roleIntentOptions();
     if (options) {
-      const opts = value && !options.includes(value) ? [value, ...options] : options;
       return (
-        <select className="cellinput" value={value} onChange={(e) => onSet(e.target.value)}>
-          <option value="">— select —</option>
-          {opts.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
+        <div className="field-block">
+          <span className="field-label">{col}</span>
+          <LookupSelect options={options} value={value} onChange={onSet} />
+        </div>
       );
     }
-    return <input className="cellinput" value={value} onChange={(e) => onSet(e.target.value)} />;
+    return (
+      <div className="field-block">
+        <span className="field-label">{col}</span>
+        <input className="cellinput" value={value} onChange={(e) => onSet(e.target.value)} />
+      </div>
+    );
   }
 
   const save = useMutation({
@@ -214,8 +311,10 @@ export default function Masters() {
                     <td key={c}>{renderField(c, editing.values[c], (v) => setEditing({ ...editing, values: { ...editing.values, [c]: v } }), editing.values)}</td>
                   ))}
                   <td style={{ whiteSpace: "nowrap" }}>
-                    <button className="btn primary" onClick={() => save.mutate({ id: null, data: editing.values })}>Save</button>{" "}
-                    <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
+                    <div className="edit-row-actions">
+                      <button className="btn primary" onClick={() => save.mutate({ id: null, data: editing.values })}>Save</button>
+                      <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -226,8 +325,10 @@ export default function Masters() {
                       <td key={c}>{renderField(c, editing.values[c], (v) => setEditing({ ...editing, values: { ...editing.values, [c]: v } }), editing.values)}</td>
                     ))}
                     <td style={{ whiteSpace: "nowrap" }}>
-                      <button className="btn primary" onClick={() => save.mutate({ id: row.id, data: editing.values })}>Save</button>{" "}
-                      <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
+                      <div className="edit-row-actions">
+                        <button className="btn primary" onClick={() => save.mutate({ id: row.id, data: editing.values })}>Save</button>
+                        <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -250,4 +351,3 @@ export default function Masters() {
     </div>
   );
 }
-
