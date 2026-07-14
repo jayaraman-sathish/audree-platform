@@ -346,6 +346,64 @@ MASTERS = {
 MASTER_ORDER = ["intent", "input", "iam", "cap", "agent", "rule", "wf", "out", "tool", "ksr", "role", "outtpl",
                 "prompt"]
 
+# Per-master description shown under each master's title in the Configuration Masters UI
+# (verbatim from the demo's M_INTENT.note / M_INPUT.note / ... constants).
+MASTER_NOTES = {
+    "intent": "cfg.intent_master — defines every business intent. New intents are added here via "
+              "Scenario Studio / admin APIs, never in code.",
+    "input": "cfg.intent_parameter_master — required & optional fields per intent, with validation and UI "
+             "control. Drives guided forms and clarification questions.",
+    "iam": "cfg.intent_agent_mapping_master — the core orchestration configuration: Intent → Capability → "
+           "Agent → Sequence. Decides which agents run, order, parallel/sequential, dependency, "
+           "mandatory/optional, fallback and approval.",
+    "cap": "cfg.capability_registry_master — reusable business capabilities, independent of any specific "
+           "agent. Multiple agents can perform the same capability; the Orchestrator selects at runtime.",
+    "agent": "cfg.agent_register_master — every enterprise agent with category, capabilities, systems, "
+             "execution mode, timeout and retry policy.",
+    "rule": "cfg.rule_mapping_master — business, security, validation, compliance, approval and escalation "
+            "rules applied to intents, capabilities, agents and roles. Executed before recommendations; "
+            "fully audited.",
+    "wf": "cfg.workflow_mapping_master — maps decision output + trigger condition to workflow, assigned "
+          "role, approval and integration action. Workflow triggers only after recommendation/approval.",
+    "out": "cfg.standard_agent_output_format — every agent returns the same structure so the Result "
+           "Aggregator and Decision Engine can combine outputs. Partial results allowed; missing data "
+           "clearly marked.",
+    "tool": "cfg.tool_registry_master — all tools agents may invoke. Agents never call enterprise systems "
+            "directly; every invocation validated (RBAC), timed out, retried and logged. Write tools "
+            "require approval.",
+    "ksr": "Phase 4 — catalog of every enterprise knowledge source, its integration method, what it is "
+           "authoritative for, and business ownership. The Context Builder consults this registry; "
+           "retrieval passes the Security Filter (BOM/Recipe/pricing masking).",
+    "role": "cfg.intent_role_permission — who can request, view and approve each intent. Checked at "
+            "RT-001 (authorization) and again before data retrieval and workflow execution.",
+    "outtpl": "Defines the business-readable response structure per intent — how the Decision Engine's "
+              "result is rendered back to the user. Referenced by the Intent Master; without an output "
+              "template an intent cannot be activated.",
+    "prompt": "Prompts are configurable metadata, not hard-coded text — this is HOW each agent actually "
+              "thinks. Every prompt is versioned through Draft → Review → Approved → Published → Active → "
+              "Deprecated; the runtime uses only Active versions, and prompt changes require approval.",
+}
+
+# Example JSON payload shown under the Standard Agent Output Format master (demo's M_OUT.json).
+MASTER_JSON_EXAMPLES = {
+    "out": (
+        '{\n'
+        '  "agentId": "AGT-DOM-001",\n'
+        '  "capability": "Material Check",\n'
+        '  "status": "Available",\n'
+        '  "resultSummary": "No shortage",\n'
+        '  "detailedFindings": [],\n'
+        '  "riskLevel": "Low",\n'
+        '  "confidenceScore": 98,\n'
+        '  "missingData": [],\n'
+        '  "recommendedActions": [],\n'
+        '  "sourceReferences": ["SAP MM", "WMS"],\n'
+        '  "executionTimeMs": 840,\n'
+        '  "timestamp": "2025-06-27T10:30:00"\n'
+        '}'
+    ),
+}
+
 # ------------------- Business scenarios (BR-001..BR-007) -------------------
 
 TEMPLATES = [
