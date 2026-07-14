@@ -33,20 +33,23 @@ def get_master(master_id: str, db: Session = Depends(get_db), user: User = Depen
     rows = svc.list_rows(db, master_id)
     cols = next(m["cols"] for m in svc.list_master_ids() if m["id"] == master_id)
     return {"id": master_id, "title": mv.title, "version": mv.version, "draft_count": mv.draft_count,
-            "cols": cols, "rows": [{"id": r.id, "data": r.data, "status": r.status} for r in rows]}
+            "cols": cols, "rows": [{"id": r.id, "data": svc.present_row_data(db, master_id, r.data, r.code),
+                                     "status": r.status} for r in rows]}
 
 
 @router.post("/{master_id}/rows")
 def create_row(master_id: str, body: RowIn, db: Session = Depends(get_db), user: User = Depends(require_admin)):
     try:
         row = svc.create_row(db, master_id, body.data)
+    except svc.ReferenceValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     mv = svc.get_master_meta(db, master_id)
     req, cor = next_request_id(), next_correlation_id()
     add_audit(db, req, cor, mv.title, "CONFIG", f"Row added · {row.code} · draft {mv.version}", "HUMAN")
     add_feed(db, f"{mv.title}: row added ({row.code}) · draft {mv.version} pending publish")
-    return {"id": row.id, "data": row.data, "status": row.status}
+    return {"id": row.id, "data": svc.present_row_data(db, master_id, row.data, row.code), "status": row.status}
 
 
 @router.put("/{master_id}/rows/{row_id}")
@@ -54,13 +57,15 @@ def update_row(master_id: str, row_id: int, body: RowIn, db: Session = Depends(g
                user: User = Depends(require_admin)):
     try:
         row = svc.update_row(db, master_id, row_id, body.data)
+    except svc.ReferenceValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     mv = svc.get_master_meta(db, master_id)
     req, cor = next_request_id(), next_correlation_id()
     add_audit(db, req, cor, mv.title, "CONFIG", f"Row updated · {row.code} · draft {mv.version}", "HUMAN")
     add_feed(db, f"{mv.title}: row updated ({row.code}) · draft {mv.version} pending publish")
-    return {"id": row.id, "data": row.data, "status": row.status}
+    return {"id": row.id, "data": svc.present_row_data(db, master_id, row.data, row.code), "status": row.status}
 
 
 @router.delete("/{master_id}/rows/{row_id}")
