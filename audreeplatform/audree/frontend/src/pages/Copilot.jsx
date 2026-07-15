@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import api from "../api/client";
+import { useChat } from "../context/ChatContext";
 
 const QUICK = [
   "Can we commit 10 million Amoxicillin 500 mg capsules by 30 Sept?",
@@ -12,8 +13,6 @@ const QUICK = [
   "Is batch B-24-0187 ready for release?",
   "Which customer commitments are at risk this month?",
 ];
-
-const SESSION_ID = "session-" + Math.random().toString(36).slice(2);
 
 function Bubble({ who, children }) {
   return <div className={`bubble ${who}`}>{children}</div>;
@@ -34,9 +33,7 @@ function CapChips({ chips }) {
 }
 
 export default function Copilot() {
-  const [messages, setMessages] = useState([
-    { who: "agent", text: "Hello — I'm the Audree Enterprise Copilot. Ask your business question in plain language; I identify the intent and route it automatically. Try one of the quick questions below." },
-  ]);
+  const { messages, setMessages, sessionId: SESSION_ID } = useChat();
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const logRef = useRef(null);
