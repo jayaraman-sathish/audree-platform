@@ -21,13 +21,18 @@ function makeSessionId() {
 export function ChatProvider({ children }) {
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [sessionId] = useState(makeSessionId);
+  // Set by CommandWorkspace's prompt box, consumed once by Copilot.jsx on
+  // mount so a question typed on the landing page is actually sent through
+  // the real send() pipeline (intent routing, WMPS lookups, risk/confidence)
+  // instead of just prefilling a text box.
+  const [pendingPrompt, setPendingPrompt] = useState(null);
 
   function resetChat() {
     setMessages(INITIAL_MESSAGES);
   }
 
   return (
-    <ChatContext.Provider value={{ messages, setMessages, sessionId, resetChat }}>
+    <ChatContext.Provider value={{ messages, setMessages, sessionId, resetChat, pendingPrompt, setPendingPrompt }}>
       {children}
     </ChatContext.Provider>
   );

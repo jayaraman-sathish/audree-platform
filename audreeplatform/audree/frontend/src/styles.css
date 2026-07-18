@@ -5,19 +5,23 @@
   --ok:#0E8A5F; --ok-soft:#DDF2E9;
   --err:#C0392B; --err-soft:#FBE3E0;
   --card:#FFFFFF; --radius:10px;
+  /* Command Workspace theme accents (dark navy sidebar + teal), per the
+     approved mockup. Kept as separate tokens rather than replacing --ink/
+     --signal so every existing screen's look is untouched. */
+  --navy:#0E1F2B; --navy-soft:#16303F; --teal:#1CA6A0; --teal-soft:#E3F5F3;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'IBM Plex Sans',sans-serif;color:var(--ink);background:var(--paper);line-height:1.55;font-size:15px}
 button{font-family:inherit;cursor:pointer}
 .mono{font-family:'IBM Plex Mono',monospace}
 .app{display:grid;grid-template-columns:238px 1fr;min-height:100vh}
-.sidebar{background:var(--ink);color:#DDE7E1;padding:22px 14px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh}
+.sidebar{background:var(--navy);color:#DDE7E1;padding:22px 14px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh}
 .brand{font-family:'Archivo',sans-serif;font-weight:700;font-size:1rem;color:#fff;display:flex;align-items:center;gap:9px;padding:6px 10px;margin-bottom:4px}
 .brand .dot{width:11px;height:11px;border-radius:3px;background:var(--signal)}
 .brand-sub{font-family:'IBM Plex Mono',monospace;font-size:.6rem;letter-spacing:.12em;color:#7E8F87;padding:0 10px 14px}
 .navbtn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:#B9C8C0;padding:10px 12px;border-radius:8px;font-size:.92rem;font-weight:500;text-decoration:none}
 .navbtn:hover{background:rgba(255,255,255,.07);color:#fff}
-.navbtn.active{background:var(--signal);color:#fff}
+.navbtn.active{background:var(--teal);color:#06201d}
 .navgroup{font-family:'IBM Plex Mono',monospace;font-size:.56rem;letter-spacing:.14em;color:#7E8F87;padding:12px 12px 4px}
 .sidebar .foot{margin-top:auto;font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:#7E8F87;padding:0 12px;line-height:1.7}
 .main{padding:30px 34px;max-width:1280px;width:100%}
@@ -53,10 +57,20 @@ td{padding:8px 9px;border-bottom:1px dashed var(--grid);vertical-align:top}
 .mtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
 .mtab{font-family:'IBM Plex Mono',monospace;font-size:.7rem;padding:7px 13px;border:1px solid var(--line);border-radius:99px;color:var(--ink-soft);background:var(--card)}
 .mtab.active{background:var(--signal);border-color:var(--signal);color:#fff}
-.chatlog{max-height:540px;min-height:320px;overflow-y:auto;padding:6px 2px;display:flex;flex-direction:column}
+.chatlog{max-height:75vh;min-height:320px;overflow-y:auto;padding:6px 2px;display:flex;flex-direction:column}
 .bubble{max-width:82%;padding:10px 14px;border-radius:12px;margin:5px 0;font-size:.88rem;line-height:1.5}
 .bubble.user{margin-left:auto;background:var(--signal);color:#fff}
 .bubble.agent{background:var(--paper);border:1px solid var(--line)}
+/* Result tables (scenario rows_table / markdown pipe-tables) commonly have
+   many columns -- letting them widen past the 82% bubble cap, and using a
+   sticky header + one clean horizontal scrollbar (no nested vertical box),
+   fixes the "double-scrollbar, can't see the data" problem for wide tables. */
+.bubble.agent:has(table){max-width:98%}
+.result-table-wrap{overflow-x:auto;margin:8px 0;border:1px solid var(--line);border-radius:8px}
+.result-table-wrap table{border-collapse:collapse;font-size:.82rem;width:100%}
+.result-table-wrap th{position:sticky;top:0;background:var(--card);border-bottom:2px solid var(--line);
+  padding:6px 10px;text-align:left;white-space:nowrap}
+.result-table-wrap td{border-bottom:1px solid var(--grid);padding:6px 10px;white-space:nowrap}
 .kv{font-family:'IBM Plex Mono',monospace;font-size:.64rem;color:var(--ink);background:#fff;border:1px solid var(--grid);border-radius:6px;padding:5px 8px;display:inline-block;line-height:1.7;margin-top:4px}
 .capgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin:8px 0 4px}
 .capchip{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.72rem;background:#fff;line-height:1.45}
@@ -100,3 +114,16 @@ td{padding:8px 9px;border-bottom:1px dashed var(--grid);vertical-align:top}
 .row-inactive td{color:var(--ink-soft)}
 .vh-table td,.vh-table th{font-size:.74rem}
 .jsonbox{font-family:'IBM Plex Mono',monospace;font-size:.74rem;background:var(--paper);border:1px solid var(--grid);border-radius:8px;padding:14px;white-space:pre;overflow-x:auto;line-height:1.7}
+
+/* Command Workspace (landing page): greeting header + status pills, and the
+   Copilot prompt box. KPI/priority/connections/activity cards below reuse
+   the existing .kpis/.card/.feed/.cs classes -- no duplicate styling. */
+.cw-header{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px;margin-bottom:18px}
+.cw-header h1{font-family:'Archivo',sans-serif;font-weight:750;font-size:1.7rem;letter-spacing:-.01em}
+.cw-header p{color:var(--ink-soft);font-size:.92rem;max-width:70ch;margin-top:4px}
+.cw-pills{display:flex;gap:8px;flex-wrap:wrap}
+.cw-prompt{border:1px solid var(--teal);background:var(--teal-soft);margin-bottom:22px}
+.cw-prompt label{color:var(--ink-soft)}
+.cw-prompt-row{display:flex;gap:10px;margin-top:6px}
+.cw-prompt-row input{flex:1;border-color:var(--teal)}
+.cw-prompt-row .btn.primary{background:var(--teal);border-color:var(--teal);color:#06201d;white-space:nowrap}

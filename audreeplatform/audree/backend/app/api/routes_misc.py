@@ -2,12 +2,14 @@ import datetime as dt
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_admin
 from app.db.session import get_db
 from app.models.models import User, AuditLog, RuntimeFeed, SimProduct, SimMaterialInventory, SimLine, SimQC, \
-    ScenarioRun, AgentToolExecution
+    ScenarioRun, AgentToolExecution, Scenario
+from app.services import wms_db
 
 router = APIRouter(prefix="/api/v1", tags=["audit"])
 
@@ -47,13 +49,64 @@ def list_tool_executions(limit: int = 200, db: Session = Depends(get_db), user: 
              "created_at": r.created_at.isoformat()} for r in rows]
 
 
+def _check_wmps_connectivity() -> dict:
+    """Real, live connectivity check -- opens and immediately closes a short-
+    timeout connection to every configured WMPS plant. Replaces the previous
+    hardcoded '6/6 SAP/WMS/LIMS/QMS/CRM/Finance/MES' claim, which never
+    reflected the real WMPS connections this platform actually depends on
+    and would have shown all-green even during the real connection timeouts
+    and ODBC errors hit earlier in testing."""
+    plants = wms_db.configured_plants()
+    if not plants:
+        return {"summary": "0/0", "detail": "No WMPS plant connection configured", "plants": []}
+    results = []
+    for p in plants:
+        try:
+            conn = wms_db.get_connection(p)
+            conn.close()
+            results.append({"name": p["name"], "ok": True})
+        except Exception as exc:  # noqa: BLE001 -- report every plant, one failure shouldn't hide others
+            results.append({"name": p["name"], "ok": False, "error": str(exc)[:180]})
+    healthy = sum(1 for r in results if r["ok"])
+    return {"summary": f"{healthy}/{len(results)}",
+            "detail": ", ".join(r["name"] for r in results), "plants": results}
+
+
 @router.get("/kpis")
 def kpis(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tasks = db.query(ScenarioRun).count()
     approvals = db.query(ScenarioRun).filter(ScenarioRun.status.in_(["approved", "modified", "rejected",
                                                                        "escalated"])).count()
-    return {"active_scenarios": db.query(ScenarioRun.intent_code).distinct().count(), "tasks_this_month": tasks,
-            "human_approvals": approvals, "avg_response_seconds": 24, "connector_health": "6/6"}
+    awaiting_approval = db.query(ScenarioRun).filter(ScenarioRun.status == "pending_approval").count()
+    at_risk = db.query(ScenarioRun).filter(ScenarioRun.risk.in_(["High", "Medium"]),
+                                            ScenarioRun.status == "pending_approval").count()
+    active_scenarios = db.query(Scenario).filter(Scenario.status == "Active").count()
+    # Real average tool-execution time from actual dispatch history
+    # (rt.agent_tool_execution.execution_time_ms), replacing the previous
+    # hardcoded "24" that never reflected anything real.
+    avg_ms = db.query(func.avg(AgentToolExecution.execution_time_ms)).filter(
+        AgentToolExecution.execution_time_ms.isnot(None)).scalar()
+    avg_response_seconds = round(avg_ms / 1000, 1) if avg_ms is not None else None
+    connectivity = _check_wmps_connectivity()
+    return {"active_scenarios": active_scenarios, "tasks_this_month": tasks,
+            "human_approvals": approvals, "awaiting_approval": awaiting_approval, "at_risk": at_risk,
+            "avg_response_seconds": avg_response_seconds,
+            "connector_health": connectivity["summary"], "connector_detail": connectivity["detail"],
+            "connector_plants": connectivity["plants"]}
+
+
+@router.get("/priority-decisions")
+def priority_decisions(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Real pending-approval ScenarioRun rows, most urgent first (High risk,
+    most recent). Returns an empty list honestly when there are none --
+    never fabricated placeholder rows."""
+    rows = (db.query(ScenarioRun)
+            .filter(ScenarioRun.status == "pending_approval")
+            .order_by(ScenarioRun.risk.desc(), ScenarioRun.id.desc())
+            .limit(10).all())
+    return [{"id": r.id, "request_id": r.request_id, "decision": r.decision, "risk": r.risk,
+             "confidence": r.confidence, "workflow_name": r.workflow_name, "utterance": r.utterance,
+             "intent_code": r.intent_code} for r in rows]
 
 
 # ---------------- Simulated enterprise data (admin-editable) ----------------
